@@ -94,7 +94,7 @@ class SettingsViewModel(
 fun List<Thought>.toMarkdown(): String = buildString {
     appendLine("# Myvoice export — ${formatTimestamp(System.currentTimeMillis())}")
     appendLine()
-    if (isEmpty()) {
+    if (this@toMarkdown.isEmpty()) {
         appendLine("_No thoughts yet._")
         return@buildString
     }
