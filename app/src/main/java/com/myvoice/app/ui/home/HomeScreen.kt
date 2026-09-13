@@ -232,7 +232,7 @@ private fun MicOrb(isRecording: Boolean, isBusy: Boolean, onClick: () -> Unit) {
                 modifier = Modifier
                     .size(136.dp)
                     .scale(scale)
-                    .clip(androidx.compose.ui.graphics.CircleShape)
+                    .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
             )
         }
