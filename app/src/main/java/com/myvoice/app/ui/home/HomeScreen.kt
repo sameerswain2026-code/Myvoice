@@ -66,6 +66,7 @@ import com.myvoice.app.R
 import com.myvoice.app.data.prefs.SttProvider
 import com.myvoice.app.ui.components.RichText
 import com.myvoice.app.ui.components.formatMillis
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 @Composable

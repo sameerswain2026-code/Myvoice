@@ -92,7 +92,7 @@ fun docsViewModel(container: AppContainer): ViewModelProvider.Factory = viewMode
 class DocDetailViewModel(
     private val docRepo: DocRepository,
     private val tts: com.myvoice.app.speech.TtsManager,
-    docId: String
+    private val docId: String
 ) : ViewModel() {
 
     val doc: StateFlow<DocEntity?> = docRepo.observeById(docId)
