@@ -36,6 +36,6 @@ object KeywordTagger {
         if (clean.isEmpty()) return "Untitled thought"
         val words = clean.split(" ")
         val base = if (words.size <= maxWords) clean else words.take(maxWords).joinToString(" ") + "…"
-        return base.replaceFirstChar { it.uppercaseChar }.trimEnd('.', ',', '!', '?')
+        return base.replaceFirstChar { it.uppercaseChar() }.trimEnd('.', ',', '!', '?')
     }
 }

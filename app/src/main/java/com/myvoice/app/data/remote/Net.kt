@@ -2,6 +2,7 @@ package com.myvoice.app.data.remote
 
 import com.myvoice.app.core.AssistantException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.serializer
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -14,7 +15,7 @@ val appJson: Json = Json {
 }
 
 inline fun <reified T> jsonBody(value: T): RequestBody =
-    appJson.encodeToString(value).toRequestBody("application/json; charset=utf-8".toMediaType())
+    appJson.encodeToString(serializer<T>(), value).toRequestBody("application/json; charset=utf-8".toMediaType())
 
 fun rawJsonBody(json: String): RequestBody =
     json.toRequestBody("application/json; charset=utf-8".toMediaType())
