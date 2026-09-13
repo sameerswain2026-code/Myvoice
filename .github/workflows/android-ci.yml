@@ -56,12 +56,12 @@ jobs:
               except FileNotFoundError:
                   continue
               for line in content:
-                  if re.search(r"e: |error: |FAILURE:|BUILD FAILED|Execution failed for task|> Task .*FAILED", line):
+                  if re.search(r"e: |error: |FAILED|FAILURE:|Exception|AssertionError", line):
                       lines.append(f"{f} :: {line.strip()}")
               lines.append(f"{f} :: ---- last 8 lines ----")
               lines.extend(f"{f} :: {l.strip()}" for l in content[-8:])
-          text = "\n".join(lines[:70]).replace("\r", "")
-          step = 1500
+          text = "\n".join(lines[:120]).replace("\r", "")
+          step = 3000
           for i in range(0, len(text), step):
               chunk = text[i:i+step].replace("%", "%25").replace("\n", "%0A")
               print(f"::error::{chunk}")
