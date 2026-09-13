@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Myvoice</string>
+    <string name="tagline">Your personal AI thinking assistant</string>
+    <string name="mic_start">Start recording</string>
+    <string name="mic_stop">Stop recording</string>
+    <string name="think_button">Think with me</string>
+    <string name="hint_transcript">Speak your mind, or type a thought…</string>
+    <string name="empty_history_title">No thoughts yet</string>
+    <string name="empty_history_body">Tap the mic on the Talk tab and say what\'s on your mind. Every thought is saved here with an AI reflection.</string>
+</resources>
