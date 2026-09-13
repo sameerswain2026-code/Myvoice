@@ -17,6 +17,7 @@ import com.myvoice.app.data.remote.SarvamClient
 import com.myvoice.app.domain.KeywordTagger
 import com.myvoice.app.domain.ThinkingEngine
 import com.myvoice.app.domain.ThoughtMetadataGenerator
+import com.myvoice.app.domain.TranscriptPolisher
 import com.myvoice.app.speech.DeviceSpeechRecognizer
 import com.myvoice.app.speech.TtsManager
 import kotlinx.coroutines.Job
@@ -36,12 +37,14 @@ data class HomeUiState(
     val isRecording: Boolean = false,
     val isTranscribing: Boolean = false,
     val isThinking: Boolean = false,
+    val isPolishing: Boolean = false,
     val stage: String? = null,
     val partialTranscript: String = "",
     val transcript: String = "",
     val reply: String = "",
     val usedWeb: Boolean = false,
     val savedToHistory: Boolean = false,
+    val lastSavedId: String = "",
     val error: String? = null,
     val autoSpeak: Boolean = false,
     val recordingMs: Long = 0,
@@ -53,15 +56,19 @@ class HomeViewModel(
     private val settingsRepo: SettingsRepository,
     private val engine: ThinkingEngine,
     private val metadataGenerator: ThoughtMetadataGenerator,
+    private val polisher: TranscriptPolisher,
     private val recorder: AudioRecorder,
     private val deviceRecognizer: DeviceSpeechRecognizer,
     private val deepgram: DeepgramClient,
     private val sarvam: SarvamClient,
-    private val tts: TtsManager
+    val tts: TtsManager
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(HomeUiState())
     val ui: StateFlow<HomeUiState> = _ui.asStateFlow()
+
+    /** Whether TTS is currently reading a reply aloud. */
+    val speaking: StateFlow<Boolean> = tts.speaking
 
     private var listenJob: Job? = null
     private var tickJob: Job? = null
@@ -69,14 +76,18 @@ class HomeViewModel(
 
     init {
         viewModelScope.launch {
-            val s = settingsRepo.current()
-            _ui.update {
-                it.copy(
-                    sttProvider = s.sttProvider,
-                    hasGeminiKey = s.geminiKey.isNotBlank(),
-                    autoSpeak = s.autoSpeak
-                )
-            }
+            refreshSettings()
+        }
+    }
+
+    private suspend fun refreshSettings() {
+        val s = settingsRepo.current()
+        _ui.update {
+            it.copy(
+                sttProvider = s.sttProvider,
+                hasGeminiKey = s.geminiKey.isNotBlank(),
+                autoSpeak = s.autoSpeak
+            )
         }
     }
 
@@ -95,6 +106,7 @@ class HomeViewModel(
     fun startVoiceCapture(languageTag: String) {
         val state = _ui.value
         if (state.isRecording || state.isTranscribing || state.isThinking) return
+        tts.stop()
         _ui.update { it.copy(lastInputWasVoice = true, savedToHistory = false) }
 
         if (state.sttProvider == SttProvider.DEVICE) {
@@ -116,6 +128,11 @@ class HomeViewModel(
                                 text.isNotBlank() -> text
                                 s.transcript.isBlank() -> lastPartial
                                 else -> s.transcript
+                            },
+                            error = if (text.isBlank() && lastPartial.isBlank() && s.transcript.isBlank()) {
+                                "Kuch sunayi nahi diya — phir se boliye, ya typing try karein."
+                            } else {
+                                null
                             }
                         )
                     }
@@ -139,7 +156,7 @@ class HomeViewModel(
                 _ui.update { it.copy(error = friendlyMessage(t)) }
                 return
             }
-            _ui.update { it.copy(isRecording = true, recordingMs = 0) }
+            _ui.update { it.copy(isRecording = true, recordingMs = 0, error = null) }
             startTicker()
         }
     }
@@ -151,7 +168,11 @@ class HomeViewModel(
             listenJob = null
             stopTicker()
             _ui.update { s ->
-                s.copy(isRecording = false, transcript = s.transcript.ifBlank { lastPartial })
+                s.copy(
+                    isRecording = false,
+                    partialTranscript = "",
+                    transcript = s.transcript.ifBlank { lastPartial }
+                )
             }
             return
         }
@@ -178,7 +199,7 @@ class HomeViewModel(
                         isTranscribing = false,
                         recordingMs = recording.durationMs,
                         transcript = if (text.isNotBlank()) text else current.transcript,
-                        error = if (text.isBlank()) "Didn't catch any speech — try again." else null
+                        error = if (text.isBlank()) "Awaaz record hui par kuch samajh nahi aaya — phir se try karein." else null
                     )
                 }
             } catch (t: Throwable) {
@@ -189,44 +210,56 @@ class HomeViewModel(
 
     fun sendThought() {
         val input = _ui.value.transcript.trim()
-        if (input.isEmpty() || _ui.value.isThinking) return
+        if (input.isEmpty() || _ui.value.isThinking || _ui.value.isPolishing) return
         if (!_ui.value.hasGeminiKey) {
             _ui.update {
-                it.copy(error = "No Gemini API key set — add one in Settings → Thinking model.")
+                it.copy(
+                    error = "Gemini API key nahi hai. Settings → 'AI brain' me key daalein — uske bina AI reply nahi banega. (Voice note phir bhi history me save ho sakta hai.)"
+                )
             }
             return
         }
+        tts.stop()
         listenJob?.cancel()
         _ui.update {
             it.copy(
                 isThinking = true,
+                isPolishing = true,
                 reply = "",
                 error = null,
                 savedToHistory = false,
-                stage = "Warming up"
+                stage = "Aapke shabdon ko saaf kar raha hun…"
             )
         }
         viewModelScope.launch {
             try {
                 val s = settingsRepo.current()
+
+                // Step 1: polish the transcript (auto-correction).
+                val polished = runCatching { polisher.polish(input) }.getOrDefault(input)
+                _ui.update { it.copy(transcript = polished, isPolishing = false, stage = "Soch raha hun…") }
+
+                // Step 2: think (with optional web grounding).
                 val context = buildRecentContext(repo.recent(5))
-                val result = engine.think(input, context) { event ->
+                val result = engine.think(polished, context) { event ->
                     when (event) {
                         is ThinkingEngine.EngineEvent.Stage ->
                             _ui.update { it.copy(stage = event.label) }
                         is ThinkingEngine.EngineEvent.Searching ->
-                            _ui.update { it.copy(stage = "Searching the web: ${event.query}") }
+                            _ui.update { it.copy(stage = "Web par dhoond raha hun: ${event.query}") }
                         is ThinkingEngine.EngineEvent.SearchDone ->
-                            _ui.update { it.copy(stage = "Read ${event.count} sources") }
+                            _ui.update { it.copy(stage = "${event.count} sources padh liye") }
                     }
                 }
-                _ui.update { it.copy(stage = "Saving to history") }
-                val meta = metadataGenerator.generate(input, result.reply)
+
+                // Step 3: save to history.
+                _ui.update { it.copy(stage = "History me save kar raha hun…") }
+                val meta = metadataGenerator.generate(polished, result.reply)
                 val now = System.currentTimeMillis()
                 val thought = Thought(
                     id = UUID.randomUUID().toString(),
-                    title = meta.title.ifBlank { KeywordTagger.titleFor(input) },
-                    transcript = input,
+                    title = meta.title.ifBlank { KeywordTagger.titleFor(polished) },
+                    transcript = polished,
                     reply = result.reply,
                     tags = meta.tags,
                     createdAt = now,
@@ -248,7 +281,7 @@ class HomeViewModel(
                 }
                 if (_ui.value.autoSpeak) tts.speak(result.reply)
             } catch (t: Throwable) {
-                _ui.update { it.copy(isThinking = false, stage = null, error = friendlyMessage(t)) }
+                _ui.update { it.copy(isThinking = false, isPolishing = false, stage = null, error = friendlyMessage(t)) }
             }
         }
     }
@@ -264,19 +297,11 @@ class HomeViewModel(
     fun clearSession() {
         listenJob?.cancel()
         listenJob = null
+        tts.stop()
         stopTicker()
         lastPartial = ""
         _ui.value = HomeUiState(hasMicPermission = _ui.value.hasMicPermission)
-        viewModelScope.launch {
-            val s = settingsRepo.current()
-            _ui.update {
-                it.copy(
-                    sttProvider = s.sttProvider,
-                    hasGeminiKey = s.geminiKey.isNotBlank(),
-                    autoSpeak = s.autoSpeak
-                )
-            }
-        }
+        viewModelScope.launch { refreshSettings() }
     }
 
     private fun startTicker() {
@@ -321,6 +346,7 @@ fun homeViewModel(container: AppContainer): ViewModelProvider.Factory = viewMode
             settingsRepo = container.settingsRepository,
             engine = container.thinkingEngine,
             metadataGenerator = container.metadataGenerator,
+            polisher = container.transcriptPolisher,
             recorder = container.audioRecorder,
             deviceRecognizer = container.deviceRecognizer,
             deepgram = container.deepgramClient,

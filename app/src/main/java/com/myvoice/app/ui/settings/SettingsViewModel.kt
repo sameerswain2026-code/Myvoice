@@ -9,6 +9,7 @@ import com.myvoice.app.AppContainer
 import com.myvoice.app.core.friendlyMessage
 import com.myvoice.app.data.db.Thought
 import com.myvoice.app.data.db.ThoughtRepository
+import com.myvoice.app.data.db.DocRepository
 import com.myvoice.app.data.prefs.AppSettings
 import com.myvoice.app.data.prefs.SettingsRepository
 import com.myvoice.app.data.remote.AppwriteSync
@@ -23,7 +24,8 @@ import kotlinx.coroutines.launch
 class SettingsViewModel(
     private val settingsRepo: SettingsRepository,
     private val appwrite: AppwriteSync,
-    private val repo: ThoughtRepository
+    private val repo: ThoughtRepository,
+    private val docRepo: DocRepository
 ) : ViewModel() {
 
     data class UiState(
@@ -34,7 +36,8 @@ class SettingsViewModel(
         val syncing: Boolean = false,
         val syncMessage: String? = null,
         val error: String? = null,
-        val thoughtCount: Int = 0
+        val thoughtCount: Int = 0,
+        val docCount: Int = 0
     )
 
     private val _ui = MutableStateFlow(UiState())
@@ -44,7 +47,8 @@ class SettingsViewModel(
         viewModelScope.launch {
             val s = settingsRepo.current()
             val count = repo.count()
-            _ui.update { it.copy(loaded = true, draft = s, thoughtCount = count) }
+            val docs = docRepo.count()
+            _ui.update { it.copy(loaded = true, draft = s, thoughtCount = count, docCount = docs) }
         }
     }
 
@@ -80,7 +84,8 @@ class SettingsViewModel(
     fun clearAllData() {
         viewModelScope.launch {
             repo.clearAll()
-            _ui.update { it.copy(thoughtCount = 0) }
+            docRepo.clearAll()
+            _ui.update { it.copy(thoughtCount = 0, docCount = 0) }
         }
     }
 
@@ -120,7 +125,8 @@ fun settingsViewModel(container: AppContainer): ViewModelProvider.Factory = view
         SettingsViewModel(
             settingsRepo = container.settingsRepository,
             appwrite = container.appwriteSync,
-            repo = container.thoughtRepository
+            repo = container.thoughtRepository,
+            docRepo = container.docRepository
         )
     }
 }

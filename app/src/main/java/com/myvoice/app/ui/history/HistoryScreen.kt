@@ -154,7 +154,17 @@ private fun ThoughtRow(
                 )
             }
             Text(
-                text = formatTimestamp(thought.createdAt),
+                text = buildString {
+                    append(
+                        when (thought.source) {
+                            "LIVE" -> "💬 Live chat"
+                            "VOICE" -> "🎤 Voice note"
+                            else -> "⌨️ Typed"
+                        }
+                    )
+                    append(" · ")
+                    append(formatTimestamp(thought.createdAt))
+                },
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

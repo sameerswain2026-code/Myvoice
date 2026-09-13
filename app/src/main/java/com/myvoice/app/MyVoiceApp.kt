@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import com.myvoice.app.audio.AudioRecorder
 import com.myvoice.app.data.db.AppDatabase
+import com.myvoice.app.data.db.DocRepository
 import com.myvoice.app.data.db.ThoughtRepository
 import com.myvoice.app.data.prefs.SettingsRepository
 import com.myvoice.app.data.remote.AppwriteSync
@@ -11,8 +12,11 @@ import com.myvoice.app.data.remote.DeepgramClient
 import com.myvoice.app.data.remote.GeminiClient
 import com.myvoice.app.data.remote.SarvamClient
 import com.myvoice.app.data.remote.TavilyClient
+import com.myvoice.app.domain.DocGenerator
 import com.myvoice.app.domain.ThinkingEngine
 import com.myvoice.app.domain.ThoughtMetadataGenerator
+import com.myvoice.app.domain.TranscriptPolisher
+import com.myvoice.app.live.LiveEngine
 import com.myvoice.app.speech.DeviceSpeechRecognizer
 import com.myvoice.app.speech.TtsManager
 import okhttp3.OkHttpClient
@@ -26,6 +30,7 @@ class AppContainer(context: Context) {
     val settingsRepository = SettingsRepository(context)
     val database = AppDatabase.build(context)
     val thoughtRepository = ThoughtRepository(database.thoughtDao())
+    val docRepository = DocRepository(database.docDao())
 
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -41,10 +46,22 @@ class AppContainer(context: Context) {
 
     val thinkingEngine = ThinkingEngine(geminiClient, tavilyClient, settingsRepository)
     val metadataGenerator = ThoughtMetadataGenerator(geminiClient)
+    val transcriptPolisher = TranscriptPolisher(geminiClient)
+    val docGenerator = DocGenerator(geminiClient)
 
     val audioRecorder = AudioRecorder(context)
     val deviceRecognizer = DeviceSpeechRecognizer(context)
     val ttsManager = TtsManager(context)
+
+    val liveEngine = LiveEngine(
+        context = context.applicationContext,
+        repo = thoughtRepository,
+        settingsRepo = settingsRepository,
+        gemini = geminiClient,
+        metadataGenerator = metadataGenerator,
+        recognizer = deviceRecognizer,
+        tts = ttsManager
+    )
 }
 
 class MyVoiceApp : Application() {
